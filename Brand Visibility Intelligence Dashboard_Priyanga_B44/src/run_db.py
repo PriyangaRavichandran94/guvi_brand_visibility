@@ -1,13 +1,10 @@
-import sqlite3
 import pandas as pd
-
-df = pd.read_csv("data/final_dataset.csv")
+import sqlite3
 
 conn = sqlite3.connect("data/brand.db")
 
-# Drop table if exists
-conn.execute("DROP TABLE IF EXISTS products")
+df = pd.read_sql("SELECT * FROM products where category ='mobile' LIMIT 5", conn)
 
-df.to_sql("products", conn, index=False)
+print(df)
 
-print("✅ Database ready")
+conn.close()

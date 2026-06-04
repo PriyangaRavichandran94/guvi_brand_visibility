@@ -9,15 +9,13 @@ df = pd.read_csv("data/cleaned_data.csv")
 df['brand'] = df['title'].str.split().str[0]
 
 # ---------------------------
-# DISCOUNT
-# ---------------------------
-df['discount'] = ((df['raw_price'] - df['price']) / df['raw_price']) * 100
-df['discount'] = df['discount'].fillna(0)
-
-# ---------------------------
 # VISIBILITY SCORE
 # ---------------------------
-df['visibility_score'] = 1 / df['position']
+print(df.columns)
+df['visibility_score']  = (
+    df['rating'] * 0.6 +
+    np.log1p(df['reviews']) * 0.4
+)
 
 # ---------------------------
 # PRICE RANGE
@@ -30,7 +28,7 @@ def price_bucket(x):
     else:
         return "High"
 
-df['price_range'] = df['price'].apply(price_bucket)
+df['price_range'] = df['final_price'].apply(price_bucket)
 
 # ---------------------------
 # RATING CATEGORY
@@ -53,13 +51,13 @@ df['review_category'] = pd.cut(
 # ---------------------------
 # FLAGS
 # ---------------------------
-df['is_discounted'] = df['discount'] > 0
-df['top_10'] = df['position'] <= 10
+print(df.columns)
+df['top_10'] = df['rating'] <= 10
 
 # ---------------------------
 # VALUE SCORE
 # ---------------------------
-df['value_score'] = (df['rating'] * df['reviews']) / df['price']
+df['value_score'] = (df['rating'] * df['reviews']) / df['final_price']
 
 # ---------------------------
 # CLEANING FINAL TOUCH
@@ -71,5 +69,5 @@ df['keyword'] = df['keyword'].str.lower()
 # SAVE
 # ---------------------------
 df.to_csv("data/final_dataset.csv", index=False)
-
+print(df.columns)
 print("✅ Final dataset ready")

@@ -2,109 +2,252 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# ---------------------------
+# =========================
 # PAGE CONFIG
-# ---------------------------
-st.set_page_config(page_title="Brand Visibility Dashboard", layout="wide")
-st.title("📊 Brand Visibility Intelligence Dashboard")
+# =========================
+st.set_page_config(
+    page_title=" Brand Dashboard",
+    layout="wide"
+)
 
-# ---------------------------
-# LOAD CLEAN DATA
-# ---------------------------
+# =========================
+# STYLE (DARK AMAZON UI)
+# =========================
+st.markdown("""
+<style>
+.main { background-color: #d1bce8; color: white; }
+h1, h2, h3 { color: #ff9900; }
+
+.stMetric {
+    background-color: #d1bce8;
+    padding: 10px;
+    border-radius: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.title("🛒Brand Visibility Dashboard")
+
+# =========================
+# LOAD DATA
+# =========================
 @st.cache_data
 def load_data():
-    df = pd.read_csv("data/final_cleaned_data.csv")
+    df = pd.read_csv("data/final_dataset.csv")
+
+    # -------------------------
+    # CLEANING (IMPORTANT)
+    # -------------------------
+    df = df.fillna({
+        "reviews": 0,
+        "rating": df["rating"].median(),
+        "final_price": df["final_price"].median()
+    })
+
+    df["reviews"] = pd.to_numeric(df["reviews"], errors="coerce").fillna(0)
+    df["rating"] = pd.to_numeric(df["rating"], errors="coerce").fillna(df["rating"].median())
+    df["final_price"] = pd.to_numeric(df["final_price"], errors="coerce").fillna(df["final_price"].median())
+
+    # -------------------------
+    # ENGINEER POSITION
+    # -------------------------
+    df = df.sort_values(['keyword', 'rating', 'reviews'], ascending=[True, False, False])
+    df['position'] = df.groupby('keyword').cumcount() + 1
+
     return df
 
 df = load_data()
 
-# ---------------------------
-# SIDEBAR FILTERS
-# ---------------------------
-st.sidebar.header("🔍 Filters")
+# =========================
+# FILTERS (CLEAN UI)
+# =========================
+st.markdown("### 🔍 Filters")
 
-brands = st.sidebar.multiselect(
-    "Select Brand",
-    options=df["brand"].dropna().unique(),
-    default=df["brand"].dropna().unique()[:5]
-)
-
-platforms = st.sidebar.multiselect(
-    "Select Platform",
-    options=df["platform"].dropna().unique(),
-    default=df["platform"].dropna().unique()
-)
-
-filtered_df = df[
-    (df["brand"].isin(brands)) &
-    (df["platform"].isin(platforms))
-]
-
-# ---------------------------
-# KPIs
-# ---------------------------
 col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("📦 Total Products", len(filtered_df))
-col2.metric("🏷️ Unique Brands", filtered_df["brand"].nunique())
-col3.metric("💰 Avg Price", f"₹{round(filtered_df['price'].mean(), 2)}")
-col4.metric("⭐ Avg Rating", round(filtered_df["rating"].mean(), 2))
+with col1:
+    brand_filter = st.multiselect("Brand", sorted(df["brand"].dropna().unique()))
 
-st.divider()
+with col2:
+    platform_filter = st.multiselect("Platform", sorted(df["platform"].dropna().unique()))
 
-# ---------------------------
-# CHARTS
-# ---------------------------
-fig1 = px.bar(
-    filtered_df["brand"].value_counts().rename_axis("brand").reset_index(name="count"),
-    x="brand",
-    y="count",
-    title="Brand Presence"
-)
+with col3:
+    keyword_filter = st.multiselect("Keyword", sorted(df["keyword"].dropna().unique()))
 
-fig2 = px.histogram(
+with col4:
+    position_filter = st.slider(
+        "Position",
+        int(df["position"].min()),
+        int(df["position"].max()),
+        (1, 50)
+    )
+
+# =========================
+# FILTER LOGIC (SAFE)
+# =========================
+filtered_df = df.copy()
+
+if brand_filter:
+    filtered_df = filtered_df[filtered_df["brand"].isin(brand_filter)]
+
+if platform_filter:
+    filtered_df = filtered_df[filtered_df["platform"].isin(platform_filter)]
+
+if keyword_filter:
+    filtered_df = filtered_df[filtered_df["keyword"].isin(keyword_filter)]
+
+filtered_df = filtered_df[
+    filtered_df["position"].between(position_filter[0], position_filter[1])
+]
+
+# =========================
+# TABS
+# =========================
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "📊 Overview",
+    "🏷️ Brand Insights",
+    "💰 Pricing",
+    "📦 Platform",
+    "📈 Visibility",
+    "🔍 Product Explorer"
+])
+
+# =========================
+# 1. OVERVIEW
+# =========================
+with tab1:
+    st.subheader("Overview KPIs")
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("Total Products", len(filtered_df))
+    c2.metric("Avg Price", f"₹{filtered_df['final_price'].mean():.2f}")
+    c3.metric("Avg Rating", f"{filtered_df['rating'].mean():.2f}")
+    c4.metric("Total Reviews", int(filtered_df['reviews'].sum()))
+
+    fig1 = px.histogram(filtered_df, x="final_price", nbins=25, title="Price Distribution",color_discrete_sequence=px.colors.qualitative.Set3)
+    st.plotly_chart(fig1, use_container_width=True)
+
+    kw = filtered_df["keyword"].value_counts().reset_index()
+    kw.columns = ["keyword", "count"]
+
+    fig2 = px.bar(kw, x="keyword", y="count", title="Products per Keyword", color_discrete_sequence=px.colors.qualitative.Set3)
+    st.plotly_chart(fig2, use_container_width=True)
+
+fig3 = px.treemap(
     filtered_df,
-    x="price",
-    nbins=20,
-    title="Price Distribution"
+    path=["platform"],
+    title="Platform Share"
 )
-st.plotly_chart(fig2, use_container_width=True)
 
-fig3 = px.scatter(
-    filtered_df,
-    x="price",
-    y="rating",
-    color="brand",
-    title="Price vs Rating"
-)
 st.plotly_chart(fig3, use_container_width=True)
 
-# ---------------------------
-# TABLE
-# ---------------------------
-st.subheader("📋 Product Data")
-st.dataframe(filtered_df)
+# =========================
+# 2. BRAND INSIGHTS
+# =========================
+with tab2:
+    st.subheader("Brand Insights")
 
-# ---------------------------
-# INSIGHTS
-# ---------------------------
-st.subheader("🧠 Insights")
-
-if not filtered_df.empty:
     top_brand = filtered_df["brand"].value_counts().idxmax()
-    avg_price = round(filtered_df["price"].mean(), 2)
+    st.metric("Top Brand", top_brand)
+    st.metric("Avg Visibility", round(filtered_df["visibility_score"].mean(), 2))
 
-    st.success(f"Top Brand: {top_brand}")
-    st.info(f"Average Price: ₹{avg_price}")
+    b1 = filtered_df["brand"].value_counts().reset_index()
+    b1.columns = ["brand", "count"]
 
-# ---------------------------
-# DOWNLOAD
-# ---------------------------
-csv_download = filtered_df.to_csv(index=False).encode("utf-8")
+    fig1 = px.bar(b1, x="brand", y="count", title="Brand Count",color_discrete_sequence=px.colors.qualitative.Set3)
+    st.plotly_chart(fig1)
 
-st.download_button(
-    label="📥 Download Data",
-    data=csv_download,
-    file_name="filtered_data.csv",
-    mime="text/csv"
-)
+    fig2 = px.bar(filtered_df.groupby("brand")["rating"].mean().reset_index(),
+                  x="brand", y="rating",
+                  title="Brand Avg Rating",color_discrete_sequence=px.colors.qualitative.Set3)
+    st.plotly_chart(fig2)
+
+    top10 = filtered_df[filtered_df["position"] <= 10]["brand"].value_counts().reset_index()
+    top10.columns = ["brand", "count"]
+
+    fig3 = px.bar(top10, x="brand", y="count", title="Top Brands in Top 10",color_discrete_sequence=px.colors.qualitative.Set3)
+    st.plotly_chart(fig3)
+
+# =========================
+# 3. PRICING
+# =========================
+with tab3:
+    st.subheader("Pricing Analysis")
+
+    c1, c2 = st.columns(2)
+    c1.metric("Avg Price", f"₹{filtered_df['final_price'].mean():.2f}")
+    c2.metric("Max Price", f"₹{filtered_df['final_price'].max():.2f}")
+
+    fig1 = px.histogram(filtered_df, x="final_price", nbins=25,color_discrete_sequence=px.colors.qualitative.Set3)
+    st.plotly_chart(fig1)
+
+    fig2 = px.scatter(filtered_df, x="final_price", y="position", color="brand")
+    st.plotly_chart(fig2)
+
+    fig3 = px.scatter(filtered_df, x="final_price", y="rating", color="brand")
+    st.plotly_chart(fig3)
+
+# =========================
+# 4. PLATFORM
+# =========================
+with tab4:
+    st.subheader("Platform Analysis")
+
+    c1, c2 = st.columns(2)
+    c1.metric("Platforms", filtered_df["platform"].nunique())
+    c2.metric("Best Platform", filtered_df.groupby("platform")["rating"].mean().idxmax())
+
+    p1 = filtered_df["platform"].value_counts().reset_index()
+    p1.columns = ["platform", "count"]
+
+    fig1 = px.bar(p1, x="platform", y="count")
+    st.plotly_chart(fig1)
+
+    fig2 = px.bar(filtered_df.groupby("platform")["final_price"].mean().reset_index(),
+                  x="platform", y="final_price")
+    st.plotly_chart(fig2)
+
+    fig3 = px.bar(filtered_df.groupby("platform")["rating"].mean().reset_index(),
+                  x="platform", y="rating")
+    st.plotly_chart(fig3)
+
+# =========================
+# 5. VISIBILITY
+# =========================
+with tab5:
+    st.subheader("Visibility & Ranking")
+
+    c1, c2 = st.columns(2)
+    c1.metric("Avg Position", round(filtered_df["position"].mean(), 2))
+    c2.metric("Avg Visibility", round(filtered_df["visibility_score"].mean(), 2))
+
+    fig1 = px.histogram(filtered_df, x="position")
+    st.plotly_chart(fig1)
+
+    fig2 = px.scatter(filtered_df, x="rating", y="position")
+    st.plotly_chart(fig2)
+
+    fig3 = px.scatter(filtered_df, x="reviews", y="position", size="reviews")
+    st.plotly_chart(fig3)
+
+# =========================
+# 6. PRODUCT EXPLORER
+# =========================
+with tab6:
+    st.subheader("Product Explorer")
+
+    search = st.text_input("Search Product Title")
+
+    temp = filtered_df.copy()
+
+    if search:
+        temp = temp[temp["title"].str.contains(search, case=False)]
+
+    st.dataframe(
+        temp.sort_values("position")[
+            ["title", "brand", "final_price", "rating",
+             "reviews", "platform", "position"]
+        ],
+        use_container_width=True
+    )
